@@ -4,11 +4,12 @@ import {
   Mic, MicOff, Camera as CameraIcon, CameraOff, 
   Bot, Settings, History, X, Cpu, User, UserCheck,
   Activity, Zap, Shield, Radar, Globe, Terminal, Eye, Coffee, ZapOff,
-  LayoutDashboard, MessageSquare, ChevronRight
+  LayoutDashboard, MessageSquare, ChevronRight, Cloud, CloudOff
 } from 'lucide-react';
 import { Avatar3D } from '../components/avatar/Avatar3D.tsx';
 import { AssistantState, UserSettings } from '../types.ts';
 import { useNeuralLink } from '../hooks/useNeuralLink.ts';
+import { supabase } from '../services/supabaseService.ts';
 
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Bhava',
@@ -102,7 +103,6 @@ const App: React.FC = () => {
     if (neural.isActive) neural.stop();
   };
 
-  // Static Tailwind color mappings to avoid dynamic class failures
   const themePrimary = settings.gender === 'FEMALE' ? 'pink-500' : 'cyan-500';
   const themeActiveBg = settings.gender === 'FEMALE' ? 'bg-pink-500/20' : 'bg-cyan-500/20';
   const themeText = settings.gender === 'FEMALE' ? 'text-pink-500' : 'text-cyan-500';
@@ -134,15 +134,24 @@ const App: React.FC = () => {
         {/* Neural Log Side Panel */}
         <aside className={`${mobileView === 'HISTORY' ? 'flex' : 'hidden'} lg:flex flex-col w-full lg:w-72 xl:w-80 gap-6 h-full pb-24 lg:pb-0`}>
            <div className="flex-1 rounded-[2.5rem] bg-black/40 backdrop-blur-3xl border border-white/5 p-6 flex flex-col shadow-2xl overflow-hidden">
-              <div className="flex items-center gap-3 mb-6">
-                <Terminal className={`w-4 h-4 ${themeText}`} />
-                <h2 className="text-[9px] font-black uppercase tracking-[0.4em] text-slate-500">Neural Log</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <Terminal className={`w-4 h-4 ${themeText}`} />
+                  <h2 className="text-[9px] font-black uppercase tracking-[0.4em] text-slate-500">Neural Log</h2>
+                </div>
+                {/* Cloud Sync Status */}
+                <div className={`flex items-center gap-2 px-2 py-1 rounded-full border border-white/5 ${supabase ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                  {supabase ? <Cloud className="w-3 h-3 text-emerald-400" /> : <CloudOff className="w-3 h-3 text-red-400" />}
+                  <span className={`text-[7px] font-black uppercase ${supabase ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {supabase ? 'Synced' : 'Local'}
+                  </span>
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto space-y-4 scrollbar-hide">
                 {neural.transcriptions.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full opacity-10 text-center gap-4">
                     <History className="w-12 h-12" />
-                    <p className="text-[10px] font-black uppercase tracking-widest uppercase">System Ready<br/>Establish Sync</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest">System Ready<br/>Establish Sync</p>
                   </div>
                 ) : (
                   <>
