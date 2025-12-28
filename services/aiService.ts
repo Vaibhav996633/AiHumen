@@ -1,6 +1,14 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { UserSettings } from "../types";
+import { UserSettings } from "../types.ts";
+
+const getApiKey = () => {
+  try {
+    return (window as any).process?.env?.API_KEY || (window as any).API_KEY || "";
+  } catch (e) {
+    return "";
+  }
+};
 
 export const getSystemInstruction = (settings: UserSettings, recentMemories: string = "") => {
   const persona = settings.gender === 'FEMALE' ? 'Aira Tai' : 'Aryan Bhau';
@@ -32,5 +40,5 @@ export const getSystemInstruction = (settings: UserSettings, recentMemories: str
 };
 
 export const createAIInstance = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  return new GoogleGenAI({ apiKey: getApiKey() });
 };

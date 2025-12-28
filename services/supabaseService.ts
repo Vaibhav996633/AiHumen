@@ -1,18 +1,25 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
-import { UserSettings, TranscriptionItem } from '../types';
+import { UserSettings, TranscriptionItem } from '../types.ts';
 
-// These environment variables should be configured in your environment
-const supabaseUrl = (process.env as any).SUPABASE_URL || '';
-const supabaseAnonKey = (process.env as any).SUPABASE_ANON_KEY || '';
+const getEnv = () => {
+  try {
+    return (window as any).process?.env || (window as any).env || {};
+  } catch (e) {
+    return {};
+  }
+};
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const env = getEnv();
+const supabaseUrl = env.SUPABASE_URL;
+const supabaseAnonKey = env.SUPABASE_ANON_KEY;
 
-/**
- * Saves or updates the user's neural profile.
- */
+export const supabase = (supabaseUrl && supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
+
 export const syncProfile = async (userId: string, settings: UserSettings) => {
-  if (!supabaseUrl) return;
+  if (!supabase) return;
   const { error } = await supabase
     .from('profiles')
     .upsert({
@@ -25,39 +32,25 @@ export const syncProfile = async (userId: string, settings: UserSettings) => {
   if (error) console.error('Supabase Sync Error:', error);
 };
 
-/**
- * Persists a single chat turn (input and output) to the cloud memory.
- */
 export const logConversation = async (sessionId: string, items: TranscriptionItem[]) => {
-  if (!supabaseUrl) return;
+  if (!supabase) return;
   const logs = items.map(item => ({
     session_id: sessionId,
     text: item.text,
     type: item.type,
     created_at: new Date().toISOString()
   }));
-
-  const { error } = await supabase
-    .from('chat_logs')
-    .insert(logs);
-  
+  const { error } = await supabase.from('chat_logs').insert(logs);
   if (error) console.error('Supabase Log Error:', error);
 };
 
-/**
- * Fetches recent memories to give the AI context of previous sessions.
- */
 export const getRecentMemories = async (limit = 10) => {
-  if (!supabaseUrl) return [];
+  if (!supabase) return [];
   const { data, error } = await supabase
     .from('chat_logs')
     .select('text, type')
     .order('created_at', { ascending: false })
     .limit(limit);
-
-  if (error) {
-    console.error('Fetch Memory Error:', error);
-    return [];
-  }
-  return data.reverse();
+  if (error) return [];
+  return (data || []).reverse();
 };

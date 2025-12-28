@@ -1,10 +1,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { AssistantState, Emotion, TranscriptionItem, UserSettings } from '../types';
-import { createAIInstance, getSystemInstruction } from '../services/aiService';
-import { decodeBase64, decodeAudioData, createPcmBlob } from '../utils/audioUtils';
+import { AssistantState, Emotion, TranscriptionItem, UserSettings } from '../types.ts';
+import { createAIInstance, getSystemInstruction } from '../services/aiService.ts';
+import { decodeBase64, decodeAudioData, createPcmBlob } from '../utils/audioUtils.ts';
 import { Modality, LiveServerMessage } from '@google/genai';
-import { logConversation, syncProfile, getRecentMemories } from '../services/supabaseService';
+import { logConversation, syncProfile, getRecentMemories } from '../services/supabaseService.ts';
 
 export const useNeuralLink = (settings: UserSettings) => {
   const [isActive, setIsActive] = useState(false);
@@ -22,7 +22,7 @@ export const useNeuralLink = (settings: UserSettings) => {
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const proactiveTimerRef = useRef<number | null>(null);
   const silenceStartRef = useRef<number>(Date.now());
-  const sessionIdRef = useRef<string>(crypto.randomUUID());
+  const sessionIdRef = useRef<string>(crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(7));
 
   const currentInputTransRef = useRef('');
   const currentOutputTransRef = useRef('');
@@ -48,7 +48,10 @@ export const useNeuralLink = (settings: UserSettings) => {
   };
 
   const stop = useCallback(() => {
-    if (sessionRef.current) sessionRef.current.close();
+    if (sessionRef.current) {
+      try { sessionRef.current.close(); } catch(e) {}
+      sessionRef.current = null;
+    }
     if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
     sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
     sourcesRef.current.clear();
@@ -64,9 +67,10 @@ export const useNeuralLink = (settings: UserSettings) => {
       initAudio();
       if (audioContextRef.current?.state === 'suspended') await audioContextRef.current.resume();
 
-      // Fetch memory from Supabase
       const memories = await getRecentMemories(10);
-      const memoryString = memories.map(m => `${m.type === 'input' ? 'User' : 'AI'}: ${m.text}`).join('\n');
+      const memoryString = memories.length > 0 
+        ? memories.map(m => `${m.type === 'input' ? 'User' : 'AI'}: ${m.text}`).join('\n')
+        : "No previous records found.";
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const ai = createAIInstance();
@@ -87,8 +91,6 @@ export const useNeuralLink = (settings: UserSettings) => {
             };
             source.connect(proc);
             proc.connect(inputCtx.destination);
-            
-            // Sync Profile on connection
             syncProfile('default-user', settings);
           },
           onmessage: async (message: LiveServerMessage) => {
@@ -105,9 +107,7 @@ export const useNeuralLink = (settings: UserSettings) => {
             }
 
             if (message.serverContent?.interrupted) {
-              for (const source of sourcesRef.current.values()) {
-                try { source.stop(); } catch(e) {}
-              }
+              sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;
             }
@@ -117,40 +117,32 @@ export const useNeuralLink = (settings: UserSettings) => {
                 { text: currentInputTransRef.current || "...", type: 'input' }, 
                 { text: currentOutputTransRef.current || "...", type: 'output' }
               ];
-              
               setTranscriptions(prev => [...prev, ...newItems].slice(-15));
-              
-              // Persist to Supabase
               logConversation(sessionIdRef.current, newItems);
-
               currentInputTransRef.current = '';
               currentOutputTransRef.current = '';
               setState(AssistantState.LISTENING);
               silenceStartRef.current = Date.now();
-              setTimeout(() => {
-                setEmotion(prev => prev === 'ANGRY' ? 'ANGRY' : 'NEUTRAL');
-              }, 4000);
             }
 
-            const base64EncodedAudioString = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64EncodedAudioString && audioContextRef.current && outputNodeRef.current) {
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (base64Audio && audioContextRef.current && outputNodeRef.current) {
               const ctx = audioContextRef.current;
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-              const audioBuffer = await decodeAudioData(decodeBase64(base64EncodedAudioString), ctx, 24000, 1);
+              const audioBuffer = await decodeAudioData(decodeBase64(base64Audio), ctx, 24000, 1);
               const source = ctx.createBufferSource();
               source.buffer = audioBuffer;
               source.connect(outputNodeRef.current);
-              source.addEventListener('ended', () => {
-                sourcesRef.current.delete(source);
-              });
+              source.onended = () => sourcesRef.current.delete(source);
               source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
+              nextStartTimeRef.current += audioBuffer.duration;
               sourcesRef.current.add(source);
             }
           },
           onerror: (e) => {
             console.error('Neural Link Error:', e);
-            setError('Connection unstable. Resetting sync...');
+            setError('Connection unstable.');
+            stop();
           },
           onclose: () => setIsActive(false)
         },
@@ -165,41 +157,9 @@ export const useNeuralLink = (settings: UserSettings) => {
 
       sessionRef.current = await sessionPromise;
     } catch (err) { 
-      console.error(err);
-      setError('Permission required for neural link.'); 
+      setError('Connection failed.'); 
     }
-  }, [settings, initAudio]);
-
-  // Proactive Aggressive Loop
-  useEffect(() => {
-    if (isActive && state === AssistantState.LISTENING) {
-      if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
-      
-      const checkSilence = () => {
-        const silenceDuration = Date.now() - silenceStartRef.current;
-        const userName = settings.userName || 'Bhava';
-
-        if (sessionRef.current && state === AssistantState.LISTENING) {
-          if (silenceDuration > 45000) { 
-            setEmotion('ANGRY');
-            sessionRef.current.sendRealtimeInput({
-              text: `(ACTION: SHOUT AT ${userName}. Aggressive Marathi slang. Angry mode.)`
-            });
-            setState(AssistantState.THINKING);
-          } else if (silenceDuration > 25000) { 
-            setEmotion('ANGRY');
-            sessionRef.current.sendRealtimeInput({
-              text: `(ACTION: Sarcastic nudge to ${userName}. "काहीतरी बोल आता.")`
-            });
-            setState(AssistantState.THINKING);
-          }
-        }
-      };
-
-      proactiveTimerRef.current = window.setTimeout(checkSilence, 5000);
-    }
-    return () => { if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current); };
-  }, [state, isActive, emotion, settings.userName]);
+  }, [settings, initAudio, stop]);
 
   useEffect(() => {
     let animationFrame: number;
@@ -208,8 +168,7 @@ export const useNeuralLink = (settings: UserSettings) => {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        const boost = emotion === 'ANGRY' ? 1.4 : 1.0;
-        setVolume(Math.min(1, (avg / 110) * boost)); 
+        setVolume(Math.min(1, avg / 120)); 
       } else {
         setVolume(0);
       }
@@ -217,7 +176,7 @@ export const useNeuralLink = (settings: UserSettings) => {
     };
     updateVolume();
     return () => cancelAnimationFrame(animationFrame);
-  }, [state, emotion]);
+  }, [state]);
 
   return { isActive, state, emotion, transcriptions, volume, error, start, stop, setError, sessionRef };
 };
