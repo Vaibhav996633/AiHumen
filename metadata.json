@@ -1,0 +1,8 @@
+{
+  "name": "Human-Like Multimodal AI Assistant",
+  "description": "An advanced AI assistant featuring a procedural 3D avatar, real-time voice interaction via Gemini Live API, and visual intelligence through camera streaming. Supports multilingual conversations in English, Hindi, and Marathi.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

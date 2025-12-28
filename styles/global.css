@@ -1,0 +1,12 @@
+
+@keyframes scan { 
+  0% { transform: translateY(-100vh); } 
+  100% { transform: translateY(100vh); } 
+}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.border-gradient-cyan {
+  border-image: linear-gradient(to bottom, rgba(6, 182, 212, 0.3), transparent) 1;
+}
+.shadow-inner-soft {
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+}
